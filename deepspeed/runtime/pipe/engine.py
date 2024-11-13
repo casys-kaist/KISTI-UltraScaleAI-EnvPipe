@@ -884,7 +884,7 @@ class PipelineEngine(DeepSpeedEngine):
             self.timers(BATCH_INPUT_TIMER).start()
 
         batch = self._next_batch()
-
+        
         if self.is_first_stage():
             loaded = None
             if torch.is_tensor(batch[0]):

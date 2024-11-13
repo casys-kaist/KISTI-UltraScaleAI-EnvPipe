@@ -8,3 +8,9 @@ py-cpuinfo
 pydantic>=2.0.0
 torch
 tqdm
+transformers
+datasets
+llama-stack
+loguru
+wandb
+sentencepiece

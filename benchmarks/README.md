@@ -1,6 +1,13 @@
-# DeepSpeed Benchmarks
+# KISTI ULTRA SCALE AI EnvPipe Examples 
 
-If you are looking for DeepSpeed benchmarks, please see the following resources:
+The example code is based on the [transpeeder project](https://github.com/HuangLK/transpeeder/tree/c57e1d63e98c74b085506c75492a56174a1dfa92). 
 
-1. [Communication Benchmarking Suite](https://github.com/microsoft/DeepSpeedExamples/tree/master/benchmarks/communication)
-2. [Inference Benchmarks](https://github.com/microsoft/DeepSpeedExamples/tree/master/benchmarks/inference)
+# llama-7B
+python -m scripts.convert2ckpt --mp_world_size 4 \
+    --model_name_or_path /path/to/llama-7b-hf \
+    --output_dir /path/to/llama-7b-init-ckpt
+
+# llama-30B
+python -m scripts.convert2ckpt --mp_world_size 8 \
+    --model_name_or_path /path/to/llama-30b-hf \
+    --output_dir /path/to/llama-30b-init-ckpt
