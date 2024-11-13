@@ -1,6 +1,6 @@
 {
-    "train_micro_batch_size_per_gpu": 1,
-    "train_batch_size": 128,
+    "train_micro_batch_size_per_gpu": 4,
+    "train_batch_size": 16,
     "steps_per_print": 100,
     "gradient_clipping": 1.0,
     "bf16": {
@@ -54,12 +54,6 @@
         "number_checkpoints": null,
         "synchronize_checkpoint_boundary": false,
         "profile": false
-    },
-    "wandb": {
-        "enabled": false,
-        "team": null,
-        "group": null,
-        "project": "llama-65B-test-ckpt"
     },
     "wall_clock_breakdown": true
 }

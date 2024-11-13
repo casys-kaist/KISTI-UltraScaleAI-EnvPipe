@@ -38,7 +38,7 @@ class LayerNormPipe(LlamaRMSNorm):
 
 class LMLayerPipe(torch.nn.Linear):
     def forward(self, args):
-        hidden_states, = args
+        hidden_states = args
         logits = super().forward(hidden_states)
         return (logits,)
 
