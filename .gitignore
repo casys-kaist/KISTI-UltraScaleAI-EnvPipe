@@ -62,3 +62,4 @@ tests/unit/saved_checkpoint/
 *hip_layers.h
 
 downloads/
+wandb/
