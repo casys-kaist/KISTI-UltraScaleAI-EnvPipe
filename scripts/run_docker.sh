@@ -21,7 +21,8 @@ initial_port=8000
 port=$(find_available_port "$initial_port")
 
 # Run Docker container with the selected tag and available port
-docker run --gpus all -it --rm \
+# Should run docker with root permission for NVML to set GPU clock
+docker run --gpus all -it --rm --privileged \
 --ipc host \
 --ulimit memlock=-1 \
 --ulimit stack=67108864 \

@@ -35,6 +35,10 @@ class PipelineExecutionGrid(object):
             self.reconfigure_granularity = V100_RECONFIGURE_GRANULARITY
         elif self.envpipe_config["gpu"] == ENVPIPE_GPU_RTX3090:
             self.reconfigure_granularity = RTX3090_RECONFIGURE_GRANULARITY
+        elif self.envpipe_config["gpu"] == ENVPIPE_GPU_A100:
+            self.reconfigure_granularity = A100_RECONFIGURE_GRANULARITY
+        elif self.envpipe_config["gpu"] == ENVPIPE_GPU_A6000:
+            self.reconfigure_granularity = A6000_RECONFIGURE_GRANULARITY
         else:
             raise RuntimeError(
                 f'{self.__class__.__name__} gpu not registered.\

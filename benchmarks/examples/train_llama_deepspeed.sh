@@ -20,7 +20,7 @@ fi
 CHECKPOINT_PATH="JackFram/llama-160m"
 DATA_PATH="../dataset/json/gsm8k.json"
 
-deepspeed --include localhost:0,1,2,3  --master_port ${MASTER_PORT} ${WORK_DIR}/train.py \
+deepspeed --include localhost:1,2,3  --master_port ${MASTER_PORT} ${WORK_DIR}/train.py \
     --output_dir ${OUTPUT} \
     --init_ckpt  ${CHECKPOINT_PATH} \
     --data_path ${DATA_PATH} \
@@ -29,5 +29,5 @@ deepspeed --include localhost:0,1,2,3  --master_port ${MASTER_PORT} ${WORK_DIR}/
     --eval_steps 10 \
     --save_steps 200 \
     --log_steps 1 \
-    --pipe_parallel_size 4 \
+    --pipe_parallel_size 3 \
     --deepspeed_config ${WORK_DIR}/../configs/ds_config_zero1.json

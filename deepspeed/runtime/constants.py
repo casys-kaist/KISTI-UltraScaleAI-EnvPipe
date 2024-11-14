@@ -455,3 +455,52 @@ GLOBAL_RANK = "global_rank"
 #########################################
 USE_DATA_BEFORE_EXPERT_PARALLEL = "use_data_before_expert_parallelism"
 USE_DATA_BEFORE_EXPERT_PARALLEL_DEFAULT = False
+
+#########################################
+# ENVPIPE CONFIGURATIONS
+#########################################
+ENVPIPE = 'envpipe'
+ENVPIPE_TYPE_BASELINE = 'baseline'
+ENVPIPE_TYPE_UNIFORM = 'uniform'
+ENVPIPE_TYPE_ENVELOPE = 'envelope'
+ENVPIPE_SCHEDULING_1F1B = '1f1b'
+ENVPIPE_SCHEDULING_OURS = 'ours'
+ENVPIPE_RECONFIGURE_DEFAULT = 'default'
+ENVPIPE_RECONFIGURE_GREEDY = 'greedy'
+ENVPIPE_RECONFIGURE_BALANCED = 'balanced'
+ENVPIPE_RECONFIGURE_FINISH_LIMIT = 10
+
+# How many steps to profile for each sm frequency
+PROFILE_ITER_LIMIT = 5
+
+# Add your own GPU architecture configuration
+# After change you should add some code in
+# 1) EnvPipe/DeepSpeed/deepspeed/profiling/energy_profiler/profiler.py
+# 2) EnvPipe/DeepSpeed/deepspeed/runtime/pipe/reconfiguration.py
+
+# Tip: Run benchmarks/examples/scripts/get_supported_clock_frequencies.py 
+# to get the supported clock frequencies of your GPU
+ENVPIPE_GPU_V100 = 'v100'
+ENVPIPE_GPU_RTX3090 = 'rtx3090'
+ENVPIPE_GPU_A100 = 'a100'
+ENVPIPE_GPU_A6000 = 'a6000'
+
+V100_SM_FREQ_FILTER_MAX = 1530
+V100_SM_FREQ_FILTER_MIN = 800
+V100_SM_FREQ_GRANULARITY = 90
+V100_RECONFIGURE_GRANULARITY = 30
+
+RTX3090_SM_FREQ_FILTER_MAX = 2000
+RTX3090_SM_FREQ_FILTER_MIN = 1100
+RTX3090_SM_FREQ_GRANULARITY = 90
+RTX3090_RECONFIGURE_GRANULARITY = 30
+
+A100_SM_FREQ_FILTER_MAX = 1410
+A100_SM_FREQ_FILTER_MIN = 750
+A100_SM_FREQ_GRANULARITY = 90
+A100_RECONFIGURE_GRANULARITY = 30
+
+A6000_SM_FREQ_FILTER_MAX = 2000
+A6000_SM_FREQ_FILTER_MIN = 1100
+A6000_SM_FREQ_GRANULARITY = 90
+A6000_RECONFIGURE_GRANULARITY = 30

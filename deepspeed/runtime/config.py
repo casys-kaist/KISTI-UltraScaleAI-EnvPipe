@@ -123,6 +123,13 @@ class DtypeEnum(Enum):
             ", ".join([repr(v) for v in self._all_values]),
         )
 
+def get_envpipe_config(param_dict):
+    if ENVPIPE in param_dict.keys():
+        envpipe_config_params = copy.copy(param_dict[ENVPIPE])
+        return envpipe_config_params
+    else:
+        raise RuntimeError('must provide envpipe configuration') 
+
 
 def get_pld_enabled(param_dict):
     if PROGRESSIVE_LAYER_DROP in param_dict.keys():
@@ -913,6 +920,8 @@ class DeepSpeedConfig(object):
             **param_dict['weight_quantization']) if 'weight_quantization' in param_dict else None
 
         self.timers_config = get_timers_config(param_dict)
+        
+        self.envpipe_config = get_envpipe_config(param_dict)
 
     def _batch_assertion(self):
 

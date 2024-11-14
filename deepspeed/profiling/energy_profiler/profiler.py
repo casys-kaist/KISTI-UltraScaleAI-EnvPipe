@@ -20,13 +20,21 @@ class EnergyProfiler(object):
             sm_freq_filter_max = V100_SM_FREQ_FILTER_MAX
             sm_freq_filter_min = V100_SM_FREQ_FILTER_MIN
             sm_freq_granularity = V100_SM_FREQ_GRANULARITY
-            mem_freq_idx = V100_MEM_FREQ_IDX
 
         elif self.config["gpu"] == ENVPIPE_GPU_RTX3090:
             sm_freq_filter_max = RTX3090_SM_FREQ_FILTER_MAX
             sm_freq_filter_min = RTX3090_SM_FREQ_FILTER_MIN
             sm_freq_granularity = RTX3090_SM_FREQ_GRANULARITY
-            mem_freq_idx = RTX3090_MEM_FREQ_IDX
+            
+        elif self.config["gpu"] == ENVPIPE_GPU_A100:
+            sm_freq_filter_max = A100_SM_FREQ_FILTER_MAX
+            sm_freq_filter_min = A100_SM_FREQ_FILTER_MIN
+            sm_freq_granularity = A100_SM_FREQ_GRANULARITY
+        
+        elif self.config["gpu"] == ENVPIPE_GPU_A6000:
+            sm_freq_filter_max = A6000_SM_FREQ_FILTER_MAX
+            sm_freq_filter_min = A6000_SM_FREQ_FILTER_MIN
+            sm_freq_granularity = A6000_SM_FREQ_GRANULARITY
 
         else:
             raise RuntimeError(
@@ -36,8 +44,8 @@ class EnergyProfiler(object):
         # (RTX3090) Get supported gpu clocks for P2 state
         # (NVIDIA forces P2 State for CUDA programs in RTX3090)
         # (V100) Get supported gpu clocks for P0 state
-        mem_clock = nvmlDeviceGetSupportedMemoryClocks(self.handle)[
-            mem_freq_idx]
+        # Highest memory clock is the first element
+        mem_clock = nvmlDeviceGetSupportedMemoryClocks(self.handle)[0]
 
         # Get supported GPU clocks
         supported_gpu_clocks = nvmlDeviceGetSupportedGraphicsClocks(
@@ -48,6 +56,11 @@ class EnergyProfiler(object):
             filter(lambda x: x % sm_freq_granularity == 0 and
                    x <= sm_freq_filter_max and
                    x >= sm_freq_filter_min, supported_gpu_clocks))
+        
+        print(dist.get_rank(), "supported gpu clocks", supported_gpu_clocks)
+        print(dist.get_rank(), "max gpu clock", sm_freq_filter_max)
+        print(dist.get_rank(), "min gpu clock", sm_freq_filter_min)
+        print(dist.get_rank(), "gpu clocks", self.gpu_clocks)
 
         if self.config["type"] != ENVPIPE_TYPE_UNIFORM:
             # Profile is not needed for last stage because it is already critical path.
