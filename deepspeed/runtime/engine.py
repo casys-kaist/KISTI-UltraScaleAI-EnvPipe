@@ -516,6 +516,10 @@ class DeepSpeedEngine(Module):
         else:
             raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
 
+    # EnvPipe Config
+    def envpipe_config(self):
+        return self._config.envpipe_config
+    
     def checkpoint_tag_validation_enabled(self):
         return self._config.checkpoint_tag_validation_enabled
 

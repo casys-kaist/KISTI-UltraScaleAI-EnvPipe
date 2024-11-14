@@ -3,9 +3,14 @@
 
 # DeepSpeed Team
 
-from ..utils import call_to_str
-
 from abc import ABC, abstractmethod
+from queue import Queue
+
+import torch.distributed as dist
+from pynvml import *
+
+from deepspeed.runtime.constants import *
+from ..utils import call_to_str
 
 
 class PipeSchedule(ABC):
@@ -46,13 +51,45 @@ class PipeSchedule(ABC):
         stage_id (int): The pipe stage that will execute the generated schedule.
     """
 
-    def __init__(self, micro_batches, stages, stage_id):
+    def __init__(self, micro_batches, stages, stage_id, envpipe_config, profiler, grid, execution_grid):
         super().__init__()
         self.micro_batches = micro_batches
         self.stages = stages
         self.stage_id = stage_id
         self.prev_stage = self.stage_id - 1
         self.next_stage = self.stage_id + 1
+        
+        self.envpipe_config = envpipe_config
+        self.clock_freq = -1
+        self.profiler = profiler
+        self.grid = grid 
+        
+        self.reschedule_forward_cnt = [0 for _ in range(self.stages)]
+        self.reschedule_forward_cnt[self.stage_id] = profiler.get_reschedule_forward_cnt(
+            micro_batches)
+        dist.all_gather_object(self.reschedule_forward_cnt,
+                               self.reschedule_forward_cnt[self.stage_id],
+                               group=self.grid.get_pipe_parallel_group())
+        
+        for i in range(len(self.reschedule_forward_cnt) - 1):
+            if self.reschedule_forward_cnt[i] < self.reschedule_forward_cnt[i + 1]:
+                if self.reschedule_forward_cnt[i] + (self.stages - i) != self.micro_batches:
+                    self.reschedule_forward_cnt[i + 1] = \
+                        self.reschedule_forward_cnt[i]
+                        
+        self.execution_grid = execution_grid
+        if not self.execution_grid.initialized and not self.profiler.is_profiling:
+            # print("Reschedule", self.reschedule_forward_cnt)
+            for i in range(self.num_total_steps()):
+                micro_batch_id, is_forward = self._step_to_micro_batch(i)
+                if self._valid_micro_batch(micro_batch_id):
+                    self.execution_grid.add_execution_component(
+                        micro_batch_id, is_forward)
+
+            self.execution_grid.initialized = True
+            dist.all_gather_object(self.execution_grid.tag_to_grid_idx,
+                                   self.execution_grid.tag_to_grid_idx[self.stage_id],
+                                   group=self.grid.get_pipe_parallel_group())        
 
     @abstractmethod
     def steps(self):
@@ -193,11 +230,99 @@ class TrainSchedule(PipeSchedule):
     convergence follows that of a data parallel approach with the same batch
     size.
     """
-
+    
     def steps(self):
-        """"""
+        if self.envpipe_config["scheduling"] == ENVPIPE_SCHEDULING_1F1B:
+            yield from self.steps_deepspeed()
+
+        elif self.envpipe_config["scheduling"] == ENVPIPE_SCHEDULING_OURS:
+            yield from self.steps_ours()
+
+        else:
+            raise RuntimeError(
+                f'{self.__class__.__name__} invalid envpipe scheduling option \
+                     {self.envpipe_config["scheduling"]}'
+            )
+            
+    def num_pipe_buffers(self):
+        """Return the number of pipeline buffers required for this stage.
+
+        This is equivalent to the maximum number of in-flight forward passes,
+        since we need to remember the activations of forward passes in order
+        to run backpropagation. For synchronous 1F1B, this is equivalent to
+        the index difference between this stage and the last stage.
+        """
+        if self.envpipe_config["scheduling"] == ENVPIPE_SCHEDULING_1F1B:
+            buffers = min(self.stages - self.stage_id + 1, self.micro_batches)
+            return max(2, buffers)
+
+        elif self.envpipe_config["scheduling"] == ENVPIPE_SCHEDULING_OURS:
+            if self.is_last_stage:
+                return 2
+            else:
+                return min(self.stages - self.stage_id + 1, self.micro_batches) + \
+                    self.reschedule_forward_cnt[self.stage_id]
+
+        else:
+            raise RuntimeError(
+                f'{self.__class__.__name__} invalid envpipe scheduling option \
+                     {self.envpipe_config["scheduling"]}')
+            
+    def stage_id_to_num_pipe_buffers(self, stage_id):
+        if self.envpipe_config["scheduling"] == ENVPIPE_SCHEDULING_1F1B:
+            buffers = min(self.stages - stage_id + 1, self.micro_batches)
+            return max(2, buffers)
+
+        elif self.envpipe_config["scheduling"] == ENVPIPE_SCHEDULING_OURS:
+            if stage_id == self.stages - 1:
+                return 2
+            else:
+                return min(self.stages - stage_id + 1, self.micro_batches) + \
+                    self.reschedule_forward_cnt[stage_id]
+
+        else:
+            raise RuntimeError(
+                f'{self.__class__.__name__} invalid envpipe scheduling option \
+                     {self.envpipe_config["scheduling"]}')
+            
+    def num_total_steps(self):
+        """Total steps used for scheduling"""
+        if self.envpipe_config["scheduling"] == ENVPIPE_SCHEDULING_1F1B:
+            return 2 * (self.micro_batches + self.stages - 1)
+
+        elif self.envpipe_config["scheduling"] == ENVPIPE_SCHEDULING_OURS:
+            return 2 * (self.micro_batches + self.stages -
+                        1 + max(self.reschedule_forward_cnt))
+        else:
+            raise RuntimeError(
+                f'{self.__class__.__name__} invalid envpipe scheduling option \
+                     {self.envpipe_config["scheduling"]}')
+
+    def _step_to_micro_batch(self, step_id):
+        if self.envpipe_config["scheduling"] == ENVPIPE_SCHEDULING_1F1B:
+            return self._step_to_micro_batch_deepspeed(step_id)
+
+        elif self.envpipe_config["scheduling"] == ENVPIPE_SCHEDULING_OURS:
+            return self._step_to_micro_batch_ours(step_id)
+
+        else:
+            raise RuntimeError(
+                f'{self.__class__.__name__} invalid envpipe scheduling option \
+                     {self.envpipe_config["scheduling"]}')
+            
+    def _step_to_clock_freq(self, step_id):
+        micro_batch_id, is_forward = self._step_to_micro_batch(step_id)
+        assert self._valid_micro_batch(micro_batch_id)
+
+        return self.execution_grid.get_gpu_clock(micro_batch_id, is_forward)
+    
+    
+    """ Deepspeed scheduling start """
+
+    def steps_deepspeed(self):
         prev_micro_batch_id = -1
-        total_steps = 2 * (self.micro_batches + self.stages - 1)
+        total_steps = self.num_total_steps()
+        
         for step_id in range(total_steps):
             # Map the step of the pipeline to the micro-batch id and also whether it is a
             # forward or backward pass step.
@@ -209,18 +334,60 @@ class TrainSchedule(PipeSchedule):
                 curr_buffer = self._buffer_idx(micro_batch_id)
 
             cmds = []
+            
+            if not self.profiler.is_profiling and self._valid_micro_batch(micro_batch_id):
+                clock_freq = self._step_to_clock_freq(step_id)
+
+                if clock_freq != self.clock_freq:
+                    self.clock_freq = clock_freq
+                    cmds.append(LockGpuClock(clock_freq))
 
             # Exchange activations
             if is_forward:
                 if self._valid_micro_batch(prev_micro_batch_id) and self._valid_stage(self.prev_stage):
+                    cmds.append(EventRecord(is_start=True,
+                                            micro_batch_id=prev_micro_batch_id,
+                                            is_forward=False,
+                                            is_send=True))
                     cmds.append(SendGrad(prev_buffer))
+                    cmds.append(EventRecord(is_start=False,
+                                            micro_batch_id=prev_micro_batch_id,
+                                            is_forward=False,
+                                            is_send=True))
+                    
                 if self._valid_micro_batch(micro_batch_id) and self._valid_stage(self.prev_stage):
+                    cmds.append(EventRecord(is_start=True,
+                                            micro_batch_id=micro_batch_id,
+                                            is_forward=True,
+                                            is_send=False))
                     cmds.append(RecvActivation(curr_buffer))
+                    cmds.append(EventRecord(is_start=False,
+                                            micro_batch_id=micro_batch_id,
+                                            is_forward=True,
+                                            is_send=False))
+                    
             else:
                 if self._valid_micro_batch(micro_batch_id) and self._valid_stage(self.next_stage):
+                    cmds.append(EventRecord(is_start=True,
+                                            micro_batch_id=micro_batch_id,
+                                            is_forward=False,
+                                            is_send=False))
                     cmds.append(RecvGrad(curr_buffer))
+                    cmds.append(EventRecord(is_start=False,
+                                            micro_batch_id=micro_batch_id,
+                                            is_forward=False,
+                                            is_send=False))
+                
                 if self._valid_micro_batch(prev_micro_batch_id) and self._valid_stage(self.next_stage):
+                    cmds.append(EventRecord(is_start=True,
+                                            micro_batch_id=prev_micro_batch_id,
+                                            is_forward=True,
+                                            is_send=True))
                     cmds.append(SendActivation(prev_buffer))
+                    cmds.append(EventRecord(is_start=False,
+                                            micro_batch_id=prev_micro_batch_id,
+                                            is_forward=True,
+                                            is_send=True))
 
             # First/last stage loads
             if self.stage_id == 0 or self.stage_id == self.stages - 1:
@@ -239,23 +406,15 @@ class TrainSchedule(PipeSchedule):
                 cmds.append(ReduceTiedGrads())
                 cmds.append(ReduceGrads())
                 cmds.append(OptimizerStep())
+                # Reconfigure to fit inside envelope
+                cmds.append(Reconfigure())
 
             # Prepare state for next time
             prev_micro_batch_id = micro_batch_id
             yield cmds
 
-    def num_pipe_buffers(self):
-        """Return the number of pipeline buffers required for this stage.
 
-        This is equivalent to the maximum number of in-flight forward passes,
-        since we need to remember the activations of forward passes in order
-        to run backpropagation. For synchronous 1F1B, this is equivalent to
-        the index difference between this stage and the last stage.
-        """
-        buffers = min(self.stages - self.stage_id, self.micro_batches)
-        return max(2, buffers)
-
-    def _step_to_micro_batch(self, step_id):
+    def _step_to_micro_batch_deepspeed(self, step_id):
         if _is_even(step_id) and _is_even(self.stage_id):
             micro_batch_id = self._even_step_forward_id(step_id)
             is_forward = True
@@ -296,6 +455,158 @@ class TrainSchedule(PipeSchedule):
         base = ((step_id - 1) // 2) - self.stages + 1
         micro_batch_id = int(base + self.stage_id // 2)
         return micro_batch_id
+    
+    """ Deepspeed scheduling end """
+
+    """ Ours scheduling start """
+    
+    def steps_ours(self):
+        prev_micro_batch_id = -1
+        total_steps = self.num_total_steps()
+        send_activation_queue = Queue()
+
+        for step_id in range(total_steps):
+            # Map the step of the pipeline to the micro-batch id and also whether it is a
+            # forward or backward pass step.
+            micro_batch_id, is_forward = self._step_to_micro_batch(step_id)
+
+            if self._valid_micro_batch(prev_micro_batch_id):
+                prev_buffer = self._buffer_idx(prev_micro_batch_id)
+            if self._valid_micro_batch(micro_batch_id):
+                curr_buffer = self._buffer_idx(micro_batch_id)
+
+            cmds = []
+
+            if not self.profiler.is_profiling and self._valid_micro_batch(micro_batch_id):
+                clock_freq = self._step_to_clock_freq(step_id)
+
+                if clock_freq != self.clock_freq:
+                    self.clock_freq = clock_freq
+                    cmds.append(LockGpuClock(clock_freq))
+
+            if is_forward:
+                if self._valid_micro_batch(micro_batch_id) and self._valid_stage(
+                        self.prev_stage):
+                    cmds.append(EventRecord(is_start=True,
+                                            micro_batch_id=micro_batch_id,
+                                            is_forward=True,
+                                            is_send=False))
+                    cmds.append(RecvActivation(curr_buffer))
+                    cmds.append(EventRecord(is_start=False,
+                                            micro_batch_id=micro_batch_id,
+                                            is_forward=True,
+                                            is_send=False))
+
+                if self._valid_micro_batch(prev_micro_batch_id) and self._valid_stage(
+                        self.prev_stage):
+                    cmds.append(EventRecord(is_start=True,
+                                            micro_batch_id=prev_micro_batch_id,
+                                            is_forward=False,
+                                            is_send=True))
+                    cmds.append(SendGrad(prev_buffer))
+                    cmds.append(EventRecord(is_start=False,
+                                            micro_batch_id=prev_micro_batch_id,
+                                            is_forward=False,
+                                            is_send=True))
+                    
+            else:
+                if not send_activation_queue.empty() and self._valid_stage(
+                        self.next_stage):
+                    micro_batch_id_to_send = send_activation_queue.get()
+                    cmds.append(EventRecord(is_start=True,
+                                            micro_batch_id=micro_batch_id_to_send,
+                                            is_forward=True,
+                                            is_send=True))
+                    cmds.append(SendActivation(
+                        self._buffer_idx(micro_batch_id_to_send)))
+                    cmds.append(EventRecord(is_start=False,
+                                            micro_batch_id=micro_batch_id_to_send,
+                                            is_forward=True,
+                                            is_send=True))
+
+                if self._valid_micro_batch(micro_batch_id) and self._valid_stage(
+                        self.next_stage):
+                    cmds.append(EventRecord(is_start=True,
+                                            micro_batch_id=micro_batch_id,
+                                            is_forward=False,
+                                            is_send=False))
+                    cmds.append(RecvGrad(curr_buffer))
+                    cmds.append(EventRecord(is_start=False,
+                                            micro_batch_id=micro_batch_id,
+                                            is_forward=False,
+                                            is_send=False))
+
+            # First/last stage loads
+            if self.stage_id == 0 or self.stage_id == self.stages - 1:
+                if is_forward and self._valid_micro_batch(micro_batch_id):
+                    cmds.append(LoadMicroBatch(curr_buffer))
+
+            # Computation
+            if self._valid_micro_batch(micro_batch_id):
+                if is_forward:
+                    cmds.append(ForwardPass(curr_buffer))
+                    if self._valid_stage(self.next_stage):
+                        send_activation_queue.put(micro_batch_id)
+                else:
+                    cmds.append(BackwardPass(curr_buffer))
+
+            # Model step at the end of the batch
+            if step_id == total_steps - 1:
+                cmds.append(ReduceTiedGrads())
+                cmds.append(ReduceGrads())
+                cmds.append(OptimizerStep())
+                # Reconfigure to fit inside envelope
+                cmds.append(Reconfigure())
+
+            # Prepare state for next time
+            prev_micro_batch_id = micro_batch_id
+            yield cmds
+
+    def _step_to_micro_batch_ours(self, step_id):
+        if _is_even(step_id) and _is_even(self.stage_id):
+            micro_batch_id = self._even_step_forward_id_ours(step_id)
+            is_forward = True
+
+        elif _is_odd(step_id) and _is_odd(self.stage_id):
+            micro_batch_id = self._odd_step_forward_id_ours(step_id)
+            is_forward = True
+
+        elif _is_even(step_id) and _is_odd(self.stage_id):
+            micro_batch_id = self._even_step_backward_id_ours(step_id)
+            is_forward = False
+
+        elif _is_odd(step_id) and _is_even(self.stage_id):
+            micro_batch_id = self._odd_step_backward_id_ours(step_id)
+            is_forward = False
+
+        else:
+            assert False
+
+        return micro_batch_id, is_forward
+
+    def _even_step_forward_id_ours(self, step_id):
+        base = step_id // 2
+        micro_batch_id = int(base - self.stage_id // 2)
+        return micro_batch_id
+
+    def _odd_step_forward_id_ours(self, step_id):
+        base = (step_id - 1) // 2
+        micro_batch_id = int(base - self.stage_id // 2)
+        return micro_batch_id
+
+    def _even_step_backward_id_ours(self, step_id):
+        base = step_id // 2 - self.reschedule_forward_cnt[self.stage_id]
+        micro_batch_id = int(base - self.stages + (self.stage_id + 1) // 2)
+        return micro_batch_id
+
+    def _odd_step_backward_id_ours(self, step_id):
+        base = ((step_id - 1) // 2) - self.stages + 1 - \
+            self.reschedule_forward_cnt[self.stage_id]
+        micro_batch_id = int(base + self.stage_id // 2)
+        return micro_batch_id
+
+    """ Ours scheduling end """
+
 
 
 class DataParallelSchedule(PipeSchedule):
@@ -381,6 +692,23 @@ class BufferOpInstruction(PipeInstruction):
 
     def __init__(self, buffer_id, **kwargs):
         super().__init__(buffer_id=buffer_id, **kwargs)
+
+class ClockLockOperation(PipeInstruction):
+    """A pipeline instruction to lock gpu or mem clock that operates on pipeline buffer(s).
+
+    Args:
+        buffer_id (int): the index of the pipeline buffer() to modify.
+    """
+
+    def __init__(self, gpu_clock, **kwargs):
+        super().__init__(gpu_clock=gpu_clock, **kwargs)
+
+
+class RecordEventOperation(PipeInstruction):
+    def __init__(self, is_start, micro_batch_id, is_forward, is_send, **kwargs):
+        super().__init__(is_start=is_start, micro_batch_id=micro_batch_id,
+                         is_forward=is_forward, is_send=is_send, **kwargs)
+
 
 
 # IO
@@ -485,6 +813,28 @@ class RecvGrad(BufferOpInstruction):
     """
     pass
 
+
+class LockGpuClock(ClockLockOperation):
+    pass
+
+
+class EventRecord(RecordEventOperation):
+    """Measure time of recv / send & activation / gradient of ExecutionComponent
+
+    .. note::
+        Uses torch.cudaEvent(enable_timing=True)
+        Timing with explicit synchronization breaks the pipeline so we use CUDA 
+        Events to mark and records the time with EventRecordElaspedTime 
+        after one step is finish         
+    """
+    pass
+
+
+class Reconfigure(PipeInstruction):
+    """Reconfigure execution component inside envelope if step execution time is 
+        more than ENVPIPE_RECONFIGURE_THRESHOLD * (baseline step execution time)
+    """
+    pass
 
 def _is_even(x):
     return x % 2 == 0

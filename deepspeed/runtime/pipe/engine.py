@@ -15,6 +15,7 @@ from deepspeed.utils import logger
 from deepspeed.utils.timer import ThroughputTimer
 from deepspeed.accelerator import get_accelerator
 from deepspeed.runtime.bf16_optimizer import BF16_Optimizer
+from deepspeed.profiling.energy_profiler import EnergyProfiler
 
 from ..engine import DeepSpeedEngine, MEMORY_OPT_ALLREDUCE_SIZE
 from deepspeed.utils.timer import FORWARD_MICRO_TIMER, FORWARD_GLOBAL_TIMER, BACKWARD_MICRO_TIMER, \
@@ -30,6 +31,11 @@ from ..activation_checkpointing import checkpointing as ds_checkpointing
 from .module import PipelineModule, PipelineError
 from . import p2p
 from . import schedule
+from . import reconfiguration
+
+from pynvml import *
+import threading
+import torch.cuda.nvtx as nvtx
 
 TARGET_ID = -2
 LOG_STAGE = -2
@@ -257,6 +263,19 @@ class PipelineEngine(DeepSpeedEngine):
             self.timers(STEP_MICRO_TIMER).stop()
 
         self.dynamic_shape = self.module.dynamic_shape
+        
+        self.energy_profiler = EnergyProfiler(
+            self.grid, self.envpipe_config())
+        
+        self.handle = self.energy_profiler.handle
+        self.device_cnt = nvmlDeviceGetCount()
+        self.total_energy = 0
+        self.energy = [0] * self.device_cnt 
+        
+        self.execution_grid = reconfiguration.PipelineExecutionGrid(
+            self.stage_id, self.num_stages, self.micro_batches, self.grid,
+            self.energy_profiler, self.envpipe_config())
+        
 
     def set_has_attention_mask(self, value):
         assert isinstance(value, bool)
@@ -385,7 +404,11 @@ class PipelineEngine(DeepSpeedEngine):
         self.timers(TRAIN_BATCH_TIMER).start()
         sched = schedule.TrainSchedule(micro_batches=self.micro_batches,
                                        stages=self.num_stages,
-                                       stage_id=self.stage_id)
+                                       stage_id=self.stage_id,
+                                       envpipe_config=self.envpipe_config(),
+                                       profiler=self.energy_profiler,
+                                       grid=self.grid,
+                                       execution_grid=self.execution_grid)
         self._exec_schedule(sched)
 
         with torch.no_grad():
@@ -709,6 +732,9 @@ class PipelineEngine(DeepSpeedEngine):
     def _exec_forward_pass(self, buffer_id):
         self.tput_timer.start()
         self.mem_status('BEFORE FWD', reset_max=True)
+        
+        if self.energy_profiler.is_profiling:
+            self.energy_profiler.start_event_record(is_forward=True)
 
         if isinstance(self.pipe_buffers['inputs'][buffer_id], tuple):
             inputs = tuple(t.clone() for t in self.pipe_buffers['inputs'][buffer_id])
@@ -800,17 +826,27 @@ class PipelineEngine(DeepSpeedEngine):
                     total = self.total_additional_losses[name] if name in self.total_additional_losses else None
                     self.total_additional_losses[name] = add_to_total_loss(total, loss)
 
+        if self.energy_profiler.is_profiling:
+            self.energy_profiler.end_event_record(is_forward=True)
+
     def _exec_backward_pass(self, buffer_id):
         assert self.optimizer is not None, "must provide optimizer during " \
                                            "init in order to use backward"
 
         self.mem_status('BEFORE BWD', reset_max=True)
+        
+        if self.energy_profiler.is_profiling:
+            self.energy_profiler.start_event_record(is_forward=False)
 
         # The last stage just runs backward on the loss using DeepSpeed's typical
         # mechanisms.
         if self.is_last_stage():
             super().backward(self.loss)
             self.mem_status('AFTER BWD')
+            
+            if self.energy_profiler.is_profiling:
+                self.energy_profiler.end_event_record(is_forward=False)
+                
             return
 
         outputs = self.pipe_buffers['outputs'][buffer_id]
@@ -878,6 +914,9 @@ class PipelineEngine(DeepSpeedEngine):
             self.timers(BACKWARD_GLOBAL_TIMER).stop()
 
         self.mem_status('AFTER BWD')
+        
+        if self.energy_profiler.is_profiling:
+            self.energy_profiler.end_event_record(is_forward=False)
 
     def _exec_load_micro_batch(self, buffer_id):
         if self.wall_clock_breakdown():
@@ -1389,6 +1428,38 @@ class PipelineEngine(DeepSpeedEngine):
         self.module.load_state_dir(load_dir=self._curr_ckpt_path,
                                    strict=strict,
                                    checkpoint_engine=self.checkpoint_engine)
+        
+    def _lock_gpu_clock(self, gpu_clock):
+        """lock gpu clock to specific device"""
+        torch.cuda.synchronize()
+        threading.Thread(target=nvmlDeviceSetGpuLockedClocks,
+                         args=(self.handle, gpu_clock, gpu_clock)).start()
+
+    def _event_record(self, is_start, micro_batch_id, is_forward, is_send):
+        if self.energy_profiler.is_profiling or self.execution_grid.finish_reconfigure():
+            return
+
+        if is_start:
+            self.execution_grid.start_event_record(
+                micro_batch_id, is_forward, is_send)
+        else:
+            self.execution_grid.end_event_record(
+                micro_batch_id, is_forward, is_send)
+            
+    def _reconfigure(self):
+        if self.energy_profiler.is_profiling or self.execution_grid.finish_reconfigure():
+            return
+
+        # Need to reconfigure only one data parallel rank for each pipeline stage
+        if self.grid.get_data_parallel_rank() == 0:
+            self.execution_grid.measure_elapsed_time()
+            self.execution_grid.gather_grid()
+
+            if self.stage_id == 0:
+                self.execution_grid.reconfigure()
+
+        # Broadcast to all data & pipeline stages
+        self.execution_grid.broadcast_grid()
 
     # A map of PipeInstruction types to methods. Each method will be executed with the
     # kwargs provided to the PipeInstruction from the scheduler.
@@ -1403,12 +1474,18 @@ class PipelineEngine(DeepSpeedEngine):
         schedule.RecvActivation: _exec_recv_activations,
         schedule.SendGrad: _exec_send_grads,
         schedule.RecvGrad: _exec_recv_grads,
+        schedule.LockGpuClock: _lock_gpu_clock,
+        schedule.EventRecord: _event_record,
+        schedule.Reconfigure: _reconfigure,
     }
 
     def _exec_schedule(self, pipe_schedule):
         # Reserve and reset buffers.
         self._reserve_pipe_buffers(pipe_schedule.num_pipe_buffers())
         self.fwd_outputs = []
+        
+        if self.energy_profiler.is_profiling:
+            self.energy_profiler.start_profile()
 
         # For each step in the schedule
         for step_cmds in pipe_schedule:
@@ -1420,6 +1497,9 @@ class PipelineEngine(DeepSpeedEngine):
                 # Equivalent to: self._exec_forward_pass(buffer_id=0)
                 self._exec_instr = MethodType(self._INSTRUCTION_MAP[type(cmd)], self)
                 self._exec_instr(**cmd.kwargs)
+                
+        if self.energy_profiler.is_profiling:
+            self.energy_profiler.end_profile()
 
     def get_additional_losses(self):
         return self.agg_additional_losses
