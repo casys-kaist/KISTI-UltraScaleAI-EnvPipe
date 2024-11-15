@@ -14,8 +14,11 @@ class EnergyProfiler(object):
         self.grid = grid
         self.stage_id = self.grid.stage_id
         self.config = config
-        self.handle = nvmlDeviceGetHandleByIndex(torch.cuda.current_device())
-
+        current_device = torch.cuda.current_device()
+        if current_device == 2:
+            current_device = 3
+        self.handle = nvmlDeviceGetHandleByIndex(current_device)
+        
         if self.config["gpu"] == ENVPIPE_GPU_V100:
             sm_freq_filter_max = V100_SM_FREQ_FILTER_MAX
             sm_freq_filter_min = V100_SM_FREQ_FILTER_MIN
@@ -56,17 +59,16 @@ class EnergyProfiler(object):
             filter(lambda x: x % sm_freq_granularity == 0 and
                    x <= sm_freq_filter_max and
                    x >= sm_freq_filter_min, supported_gpu_clocks))
-        
-        print(dist.get_rank(), "supported gpu clocks", supported_gpu_clocks)
-        print(dist.get_rank(), "max gpu clock", sm_freq_filter_max)
-        print(dist.get_rank(), "min gpu clock", sm_freq_filter_min)
-        print(dist.get_rank(), "gpu clocks", self.gpu_clocks)
 
         if self.config["type"] != ENVPIPE_TYPE_UNIFORM:
             # Profile is not needed for last stage because it is already critical path.
             # Just setup with maximum freq.
             if self.grid.is_last_stage:
                 self.gpu_clocks = [self.gpu_clocks[0]] * len(self.gpu_clocks)
+                
+        print("handle: ", self.handle)
+        print("device_idx", torch.cuda.current_device())
+        print("gpu_clocks: ", self.gpu_clocks)
 
         self.is_profiling = (
             self.config["type"] != ENVPIPE_TYPE_BASELINE)

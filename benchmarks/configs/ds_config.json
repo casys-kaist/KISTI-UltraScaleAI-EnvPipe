@@ -1,5 +1,5 @@
 {
-    "train_micro_batch_size_per_gpu": 2,
+    "train_micro_batch_size_per_gpu": 1,
     "train_batch_size": 6,
     "steps_per_print": 100,
     "gradient_clipping": 1.0,
@@ -42,10 +42,10 @@
         "synchronize_checkpoint_boundary": false,
         "profile": false
     },
-    "wall_clock_breakdown": true,
+    "wall_clock_breakdown": false,
     "envpipe": {
-        "type": "baseline",
-        "scheduling": "1f1b",
+        "type": "envelope",
+        "scheduling": "ours",
         "reconfig": "default",
         "gpu": "a6000",
         "reconfigure_threshold_scale": "4"

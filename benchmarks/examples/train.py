@@ -9,6 +9,7 @@ import torch
 import transformers
 import numpy as np
 import deepspeed
+from pynvml import *
 
 from models.llama_pipeline_model import get_model
 from models.patching import (
@@ -27,7 +28,6 @@ warnings.filterwarnings("ignore")
 @dataclass
 class TrainerArguments:
     init_ckpt: str = field(default="llama-7B-init-test-ckpt")
-    use_flash_attn: Optional[bool] = field(default=False)
 
     rank: int = field(default=None)
     local_rank: int = field(default=None)
@@ -77,11 +77,6 @@ def main():
     torch.manual_seed(args.seed)
     deepspeed.runtime.utils.set_random_seed(args.seed)
 
-    if args.use_flash_attn:
-        logger.info("⚡⚡⚡ enable flash attention.")
-        replace_llama_attn_with_flash_attn()
-        refine_rope()
-
     tokenizer = transformers.AutoTokenizer.from_pretrained(
         args.init_ckpt,
         model_max_length=args.max_seq_len,
@@ -123,31 +118,44 @@ def main():
         )
     else:
         engine.load_checkpoint(args.resume_ckpt)
+        
+    # Profiling phase 
+    while True:
+        engine.train_batch(data_iter=train_dataloader)
+        if not engine.energy_profiler.is_profiling:
+            break
+        
+    # Reconfigure phase
+    while True:
+        engine.train_batch(data_iter=train_dataloader)
+        if engine.execution_grid.finish_reconfigure():
+            break
 
-    start = time.time()
-    for step in range(1, args.train_steps + 1):
-        if step <= args.resume_step:
-            micro_batch_num = ds_config['train_batch_size'] // ds_config['train_micro_batch_size_per_gpu']
-            [next(train_dataloader) for _ in range(micro_batch_num)]
-            logger.info(f"Step={step:>6}, skipped.")
-            continue
+    device_count = nvmlDeviceGetCount()
+    current_energy = [0] * device_count
+    total_energy_consumption = [0] * device_count
+    
+    if args.local_rank == 0:
+        for i in range(device_count):
+            handle = nvmlDeviceGetHandleByIndex(i)
+            current_energy[i] = nvmlDeviceGetTotalEnergyConsumption(handle)
 
-        loss = engine.train_batch(data_iter=train_dataloader)
-        if args.local_rank == 0:
-            if step % args.log_steps == 0:
-                now = time.time()
-                avg_time = (now-start) / args.log_steps
-                logger.info(f"Step={step:>6}, loss={loss.item():.4f}, {avg_time:.2f} it/s")
-                start = now
-
-        if step % args.eval_steps == 0:
-            # TODO
-            pass
-
-        if step % args.save_steps == 0:
-            logger.info(f"Saving at step {step}")
-            engine.save_checkpoint(args.output_dir)
-
+        start_time = time.time()
+    
+    for _ in range(args.train_steps):
+        engine.train_batch(data_iter=train_dataloader)
+        
+    torch.cuda.synchronize()
+    
+    if args.local_rank == 0:
+        for i in range(device_count):
+            handle = nvmlDeviceGetHandleByIndex(i)
+            total_energy_consumption[i] = nvmlDeviceGetTotalEnergyConsumption(handle) - current_energy[i]
+        
+        throughput = (engine.train_batch_size() * args.train_steps) / (time.time() - start_time)   
+    
+        print("[RESULT]", round(throughput, 3), ",", round(sum(
+            total_energy_consumption) / args.train_steps, 3))
 
 if __name__ == "__main__":
     main()

@@ -79,7 +79,7 @@ class PipeSchedule(ABC):
                         
         self.execution_grid = execution_grid
         if not self.execution_grid.initialized and not self.profiler.is_profiling:
-            # print("Reschedule", self.reschedule_forward_cnt)
+            print("!!!Reschedule", self.reschedule_forward_cnt)
             for i in range(self.num_total_steps()):
                 micro_batch_id, is_forward = self._step_to_micro_batch(i)
                 if self._valid_micro_batch(micro_batch_id):
@@ -408,6 +408,8 @@ class TrainSchedule(PipeSchedule):
                 cmds.append(OptimizerStep())
                 # Reconfigure to fit inside envelope
                 cmds.append(Reconfigure())
+                
+            print(f"Stage {self.stage_id} Step {step_id} MicroBatch {micro_batch_id} Forward {is_forward} Commands: {[cmd for cmd in cmds if not isinstance(cmd, EventRecord)]}")
 
             # Prepare state for next time
             prev_micro_batch_id = micro_batch_id
@@ -464,7 +466,7 @@ class TrainSchedule(PipeSchedule):
         prev_micro_batch_id = -1
         total_steps = self.num_total_steps()
         send_activation_queue = Queue()
-
+        
         for step_id in range(total_steps):
             # Map the step of the pipeline to the micro-batch id and also whether it is a
             # forward or backward pass step.
@@ -517,8 +519,7 @@ class TrainSchedule(PipeSchedule):
                                             micro_batch_id=micro_batch_id_to_send,
                                             is_forward=True,
                                             is_send=True))
-                    cmds.append(SendActivation(
-                        self._buffer_idx(micro_batch_id_to_send)))
+                    cmds.append(SendActivation(self._buffer_idx(micro_batch_id_to_send), async_op=True))
                     cmds.append(EventRecord(is_start=False,
                                             micro_batch_id=micro_batch_id_to_send,
                                             is_forward=True,
@@ -557,6 +558,8 @@ class TrainSchedule(PipeSchedule):
                 cmds.append(OptimizerStep())
                 # Reconfigure to fit inside envelope
                 cmds.append(Reconfigure())
+
+            print(f"Stage {self.stage_id} Step {step_id} MicroBatch {micro_batch_id} Forward {is_forward} Commands: {[cmd for cmd in cmds if not isinstance(cmd, EventRecord)]}")
 
             # Prepare state for next time
             prev_micro_batch_id = micro_batch_id

@@ -45,7 +45,7 @@ def _is_valid_send_recv(src_stage, dest_stage):
 
 def send(tensor, dest_stage, async_op=False):
     global _groups
-    assert async_op == False, "Doesn't support async_op true"
+    # assert async_op == False, "Doesn't support async_op true"
     src_stage = _grid.get_stage_id()
     _is_valid_send_recv(src_stage, dest_stage)
 

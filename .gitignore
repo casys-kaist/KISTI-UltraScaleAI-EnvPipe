@@ -64,3 +64,4 @@ tests/unit/saved_checkpoint/
 downloads/
 wandb/
 benchmarks/dataset/download
+*.nsys-rep

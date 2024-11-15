@@ -1055,7 +1055,7 @@ class PipelineEngine(DeepSpeedEngine):
         else:
             raise NotImplementedError(f'Could not receive type {type(recv_type)}')
 
-    def _exec_send_activations(self, buffer_id):
+    def _exec_send_activations(self, buffer_id, async_op=False):
         if self.wall_clock_breakdown():
             self.timers(PIPE_SEND_OUTPUT_TIMER).start()
 
@@ -1072,12 +1072,16 @@ class PipelineEngine(DeepSpeedEngine):
         if self.dynamic_shape or self.first_output_send:
             self.first_output_send = False
             self._send_tensor_meta(outputs, self.next_stage)
-
+        
         if isinstance(outputs, torch.Tensor):
-            p2p.send(outputs, self.next_stage)
+            p2p.send(outputs, self.next_stage, async_op=async_op)
         elif isinstance(outputs, tuple):
+            # Size of the elements in MB in the tuple
+            total_size = sum([t.numel() * t.element_size() for t in outputs]) / 1024**2
+            print("Sending tuple of tensors with total size: {:.2f} MB".format(total_size))
+            
             for idx, buffer in enumerate(outputs):
-                p2p.send(buffer, self.next_stage)
+                p2p.send(buffer, self.next_stage, async_op=async_op)
         else:
             raise NotImplementedError('Could not send output of type '
                                       f'{type(outputs)}')
