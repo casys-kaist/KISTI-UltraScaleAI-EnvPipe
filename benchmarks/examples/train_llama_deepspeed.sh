@@ -2,19 +2,21 @@
 # Train script with EnvPipe parameter switching.
 set -eux
 
-# Default values for parameters
-ENVPIPE_TYPE="baseline"
-ENVPIPE_SCHEDULING="1f1b"
-ENVPIPE_RECONFIGURE="default"
+# Variables to store command-line inputs (no default values)
+ENVPIPE_TYPE=""
+ENVPIPE_SCHEDULING=""
+ENVPIPE_RECONFIGURE=""
+GPUS=""
 
 # Display help message
 function show_help {
     echo "Usage: $0 [options]"
     echo ""
     echo "Options:"
-    echo "  --type TYPE                Set ENVPIPE_TYPE (baseline, uniform, envelope). Default: baseline"
-    echo "  --scheduling SCHEDULING    Set ENVPIPE_SCHEDULING (1f1b, ours). Default: 1f1b"
-    echo "  --reconfig RECONFIGURE     Set ENVPIPE_RECONFIGURE (default, greedy, balanced). Default: default"
+    echo "  --type TYPE                Set ENVPIPE_TYPE (baseline, uniform, envelope). Required."
+    echo "  --scheduling SCHEDULING    Set ENVPIPE_SCHEDULING (1f1b, ours). Required."
+    echo "  --reconfig RECONFIGURE     Set ENVPIPE_RECONFIGURE (default, greedy, balanced). Required."
+    echo "  --gpus GPUS                Specify GPU numbers (comma-separated, e.g., 0,1,3). Required."
     echo "  -h, --help                 Show this help message."
     exit 0
 }
@@ -34,6 +36,10 @@ while [[ $# -gt 0 ]]; do
             ENVPIPE_RECONFIGURE="$2"
             shift 2
             ;;
+        --gpus)
+            GPUS="$2"
+            shift 2
+            ;;
         -h|--help)
             show_help
             ;;
@@ -43,6 +49,16 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Check for missing required inputs
+if [ -z "$ENVPIPE_TYPE" ] || [ -z "$ENVPIPE_SCHEDULING" ] || [ -z "$ENVPIPE_RECONFIGURE" ] || [ -z "$GPUS" ]; then
+    echo "Error: Missing required arguments."
+    show_help
+fi
+
+# Calculate pipe_parallel_size based on the number of GPUs
+IFS=',' read -r -a GPU_ARRAY <<< "$GPUS"
+PIPE_PARALLEL_SIZE=${#GPU_ARRAY[@]}
 
 export MASTER_PORT=23857
 export WORK_DIR=$(pwd)
@@ -83,7 +99,7 @@ sed -i "s/ENVPIPE_SCHEDULING/${ENVPIPE_SCHEDULING}/g" "$CONFIG_FILE"
 sed -i "s/ENVPIPE_RECONFIG/${ENVPIPE_RECONFIGURE}/g" "$CONFIG_FILE"
 
 # Run the training script with DeepSpeed
-deepspeed --include localhost:0,1,3 --master_port ${MASTER_PORT} ${WORK_DIR}/train.py \
+deepspeed --include "localhost:${GPUS}" --master_port ${MASTER_PORT} ${WORK_DIR}/train.py \
     --output_dir ${OUTPUT} \
     --init_ckpt ${CHECKPOINT_PATH} \
     --data_path ${DATA_PATH} \
@@ -92,5 +108,5 @@ deepspeed --include localhost:0,1,3 --master_port ${MASTER_PORT} ${WORK_DIR}/tra
     --eval_steps 10 \
     --save_steps 200 \
     --log_steps 10 \
-    --pipe_parallel_size 3 \
+    --pipe_parallel_size ${PIPE_PARALLEL_SIZE} \
     --deepspeed_config "$CONFIG_FILE"

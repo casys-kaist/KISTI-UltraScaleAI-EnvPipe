@@ -38,13 +38,18 @@ benchmarks/examples/train_llama_deepspeed.sh
 
 ### Usage
 ```bash
-Usage: train_llama_deepspeed.sh [options]
-
-Options:
-  --type TYPE                Set ENVPIPE_TYPE (baseline, uniform, envelope). Default: baseline
-  --scheduling SCHEDULING    Set ENVPIPE_SCHEDULING (1f1b, ours). Default: 1f1b
-  --reconfig RECONFIGURE     Set ENVPIPE_RECONFIGURE (default, greedy, balanced). Default: default
-  -h, --help                 Show this help message.
+# Display help message
+function show_help {
+    echo "Usage: $0 [options]"
+    echo ""
+    echo "Options:"
+    echo "  --type TYPE                Set ENVPIPE_TYPE (baseline, uniform, envelope). Required."
+    echo "  --scheduling SCHEDULING    Set ENVPIPE_SCHEDULING (1f1b, ours). Required."
+    echo "  --reconfig RECONFIGURE     Set ENVPIPE_RECONFIGURE (default, greedy, balanced). Required."
+    echo "  --gpus GPUS                Specify GPU numbers (comma-separated, e.g., 0,1,3). Required."
+    echo "  -h, --help                 Show this help message."
+    exit 0
+}
 ```
 
 | **Parameter** | **Inputs** | **Explanation** |
