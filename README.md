@@ -6,7 +6,7 @@ EnvPipe (Envelope + Pipeline Parallelism) is an energy-efficient DNN training fr
 This improved implementation of EnvPipe builds upon the [original EnvPipe repository](https://github.com/casys-kaist/EnvPipe) with the following updates:
 - **LLama Model Support**: Enhanced compatibility with the Llama model family.
 - **DeepSpeed Upgrade**: Updated for compatibility with the latest DeepSpeed library (v0.15.4).
-- **Huggingface Integration**: Refactored code to support Huggingface models seamlessly.
+- **Huggingface Integration**: Refactored code to seamlessly support Huggingface models, incorporating updates based on the [Transpeeder](https://github.com/HuangLK/transpeeder) repository for Llama model compatibility. If a Huggingface model can run with DeepSpeed's pipeline parallelism, it is compatible with EnvPipe.
 - **Code Refactoring**: Improved code structure for better compatibility and maintainability.
 - **Improved P2P Communication**: Redesigned the activation and gradient transfer mechanism to ensure deadlock-free execution aligned with EnvPipe's scheduling method. This improvement resolves the reliance on increased `NCCL_BUFFSIZE` for non-blocking communication, which is not guaranteed as clarified [here](https://github.com/NVIDIA/nccl/issues/1252#issuecomment-2058458352).
 
