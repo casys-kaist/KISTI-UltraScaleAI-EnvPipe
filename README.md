@@ -48,6 +48,23 @@ Options:
   -h, --help                 Show this help message.
 ```
 
+There are three parameters for energy saving optimization settings in EnvPipe.
+
+| **Parameter** | **Inputs** | **Explanation** |
+|---|---|---|
+| ENVPIPE_TYPE | baseline | Run all GPUs with maximum SM frequency. |
+|  | uniform | Run all GPUs with optimal SM frequency that represents the minimum point in the energy valley curve. |
+|  | envelope | Run pipeline units with optimal SM frequency that are inside the outer envelope. |
+| ENVPIPE_SCHEDULING | 1f1b | 1F1B scheduling method. |
+|  | ours | EnvPipe's scehduling method. |
+| ENVPIPE_RECONFIGURE | default | SM frequencies of pipeline units on the critical path are not reconfigured. |
+|  | greedy |  SM frequencies of pipeline units on the critical path are greedily reconfigured from the end of the critical path. |
+|  | balanced | SM frequencies of pipeline units on the critical path are balanced as much as possible. |
+
+
+EnvPipe's reconfiguring phase generates an output at each step that represents the current energy-saving plan that specifies a schedule of the forward and backward pipeline units and SM frequency value of each pipeline unit. Each pipeline unit is shown as a combination of its type (forward or backward), SM frequency, and time between pipeline units in milliseconds. Units on the critical path are wrapped in [ ]. The reconfiguring phase ends when the critical path matches the outer envelope of the pipeline.
+
+
 ## Additional Information
 
 For more details about DeepSpeed, refer to the [original DeepSpeed README](./README_deepspeed.md).
