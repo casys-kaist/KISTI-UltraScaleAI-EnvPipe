@@ -1,7 +1,13 @@
 # KISTI UltraScaleAI EnvPipe
 
-EnvPipe (Envelope + Pipeline Parallelism) is an energy-saving DNN training framework designed to maximize energy efficiency while maintaining negligible performance slowdown. It leverages slack time created by bubbles in pipeline parallelism, scheduling pipeline units to place these bubbles strategically. By stretching the execution time of pipeline units through reduced SM frequency, EnvPipe achieves energy savings without compromising the original training accuracy or altering hyperparameters.
+EnvPipe (Envelope + Pipeline Parallelism) is an energy-efficient DNN training framework designed to reduce energy consumption while maintaining minimal performance impact. This project aims to address the high energy demands and sustainability challenges associated with scaling large language models (LLMs). By leveraging slack time created by bubbles in pipeline parallelism, EnvPipe strategically schedules pipeline units and dynamically adjusts SM frequency, enabling energy savings without compromising training accuracy or hyperparameters.
 
+### Enhancements in This Version
+This improved implementation of EnvPipe builds upon the [original EnvPipe repository](https://github.com/casys-kaist/EnvPipe) with the following updates:
+- **LLama Model Support**: Enhanced compatibility with the Llama model family.
+- **DeepSpeed Upgrade**: Updated for compatibility with the latest DeepSpeed library (v0.15.4).
+- **Huggingface Integration**: Refactored code to support Huggingface models seamlessly.
+- **Code Refactoring**: Improved code structure for better compatibility and maintainability.
 ## Getting Started
 
 ### Run the Docker Environment
