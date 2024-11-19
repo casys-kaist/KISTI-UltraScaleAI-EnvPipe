@@ -1076,10 +1076,6 @@ class PipelineEngine(DeepSpeedEngine):
         if isinstance(outputs, torch.Tensor):
             p2p.send(outputs, self.next_stage, async_op=async_op)
         elif isinstance(outputs, tuple):
-            # Size of the elements in MB in the tuple
-            total_size = sum([t.numel() * t.element_size() for t in outputs]) / 1024**2
-            print("Sending tuple of tensors with total size: {:.2f} MB".format(total_size))
-            
             for idx, buffer in enumerate(outputs):
                 p2p.send(buffer, self.next_stage, async_op=async_op)
         else:

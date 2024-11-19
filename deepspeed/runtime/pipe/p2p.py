@@ -93,6 +93,18 @@ def wait():
     get_accelerator().synchronize()
 
 
+def check_async_finished():
+    global _async
+    print(_async)
+    for op in _async:
+        if not op.is_completed():
+            return False
+    return True
+
+def cleanup_async():
+    global _async
+    _async = []
+
 def send_obj(msg: typing.Any, dest: int):
     """Send an arbitrary python object to ``dest``.
 

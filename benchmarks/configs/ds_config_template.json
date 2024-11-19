@@ -1,6 +1,6 @@
 {
     "train_micro_batch_size_per_gpu": 1,
-    "train_batch_size": 6,
+    "train_batch_size": 9,
     "steps_per_print": 100,
     "gradient_clipping": 1.0,
     "bf16": {
@@ -34,19 +34,6 @@
             "total_num_steps": 1000
         }
     },
-    "zero_optimization": {
-        "stage": 1,
-        "offload_optimizer": {
-            "device": "cpu",
-            "pin_memory": true
-        },
-        "allgather_partitions": true,
-        "allgather_bucket_size": 5e8,
-        "overlap_comm": false,
-        "reduce_scatter": true,
-        "reduce_bucket_size": 5e8,
-        "contiguous_gradients": true
-    },
     "activation_checkpointing": {
         "partition_activations": false,
         "cpu_checkpointing": false,
@@ -57,9 +44,9 @@
     },
     "wall_clock_breakdown": false,
     "envpipe": {
-        "type": "envelope",
-        "scheduling": "1f1b",
-        "reconfig": "default",
+        "type": "ENVPIPE_TYPE",
+        "scheduling": "ENVPIPE_SCHEDULING",
+        "reconfig": "ENVPIPE_RECONFIG",
         "gpu": "a6000",
         "reconfigure_threshold_scale": "4"
     }
