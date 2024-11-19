@@ -10,7 +10,6 @@ This improved implementation of EnvPipe builds upon the [original EnvPipe reposi
 - **Code Refactoring**: Improved code structure for better compatibility and maintainability.
 - **Improved P2P Communication**: Redesigned the activation and gradient transfer mechanism to ensure deadlock-free execution aligned with EnvPipe's scheduling method. This improvement resolves the reliance on increased `NCCL_BUFFSIZE` for non-blocking communication, which is not guaranteed as clarified [here](https://github.com/NVIDIA/nccl/issues/1252#issuecomment-2058458352).
 
-For non-blocking to be guaranteed, we'd need to provide something like a MPI_Bsend. 
 ## Getting Started
 
 ### Run the Docker Environment
@@ -48,8 +47,6 @@ Options:
   -h, --help                 Show this help message.
 ```
 
-There are three parameters for energy saving optimization settings in EnvPipe.
-
 | **Parameter** | **Inputs** | **Explanation** |
 |---|---|---|
 | ENVPIPE_TYPE | baseline | Run all GPUs with maximum SM frequency. |
@@ -60,9 +57,6 @@ There are three parameters for energy saving optimization settings in EnvPipe.
 | ENVPIPE_RECONFIGURE | default | SM frequencies of pipeline units on the critical path are not reconfigured. |
 |  | greedy |  SM frequencies of pipeline units on the critical path are greedily reconfigured from the end of the critical path. |
 |  | balanced | SM frequencies of pipeline units on the critical path are balanced as much as possible. |
-
-
-EnvPipe's reconfiguring phase generates an output at each step that represents the current energy-saving plan that specifies a schedule of the forward and backward pipeline units and SM frequency value of each pipeline unit. Each pipeline unit is shown as a combination of its type (forward or backward), SM frequency, and time between pipeline units in milliseconds. Units on the critical path are wrapped in [ ]. The reconfiguring phase ends when the critical path matches the outer envelope of the pipeline.
 
 
 ## Additional Information
