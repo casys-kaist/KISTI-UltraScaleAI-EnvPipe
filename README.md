@@ -70,52 +70,86 @@ Here’s an example of how to run the script:
 ./train_llama_deepspeed.sh --type envelope --scheduling ours --reconfig balanced --gpus 0,1,3
 ```
 
-### Add New GPU Architecture
+## Add New GPU Architecture
 
-EnvPipe supports the following GPU architectures by default: **V100**, **RTX3090**, **A100**, and **A6000**. To add support for a new GPU architecture, you must configure the supported clock frequencies and granularity parameters in the code and update specific files.
+EnvPipe supports the following GPU architectures by default: **V100**, **RTX3090**, **A100**, and **A6000**. To extend support to a new GPU architecture, you need to configure its supported clock frequencies, granularity parameters, and update specific parts of the codebase.
 
-#### Steps to Add a New GPU Architecture
+---
 
-1. **Define the GPU Architecture:**
-   Add the new GPU architecture name and its clock frequency parameters in the configuration section.
+### Steps to Add a New GPU Architecture
 
-  deepspeed/runtime/constants.py end of file. 
+#### 1. **Check Supported Clock Frequencies**
+Determine the clock frequencies supported by your GPU architecture to ensure compatibility. Use the provided script:
 
-   ```python
-   # Add your new GPU architecture name
-   ENVPIPE_GPU_NEWARCH = 'newarch'
+```bash
+python benchmarks/examples/scripts/get_supported_clock_frequencies.py
+```
 
-   # Define clock frequency parameters for the new GPU
-   NEWARCH_SM_FREQ_FILTER_MAX = 1800  # Maximum profiled SM frequency (MHz)
-   NEWARCH_SM_FREQ_FILTER_MIN = 900   # Minimum profiled SM frequency (MHz)
-   NEWARCH_SM_FREQ_GRANULARITY = 90   # Granularity of profiling SM frequency (MHz)
-   NEWARCH_RECONFIGURE_GRANULARITY = 30  # Minimum step size for reconfiguration (MHz)
-   ```
+This script lists the available frequencies for your GPU. Profiling all frequencies can be time-consuming, so you will define a specific range with an appropriate granularity for efficiency.
 
-2. **Update the Profiling Logic:**
-   Update `EnvPipe/DeepSpeed/deepspeed/profiling/energy_profiler/profiler.py` to include the new GPU architecture and its parameters.
+---
 
-   ```python
-   elif self.config["gpu"] == ENVPIPE_GPU_NEWARCH:
-       sm_freq_filter_max = NEWARCH_SM_FREQ_FILTER_MAX
-       sm_freq_filter_min = NEWARCH_SM_FREQ_FILTER_MIN
-       sm_freq_granularity = NEWARCH_SM_FREQ_GRANULARITY
-   ```
+#### 2. **Define the New GPU Architecture**
+Add the new GPU architecture and its associated clock frequency parameters to the configuration file.
 
-3. **Update the Reconfiguration Logic:**
-   Modify `EnvPipe/DeepSpeed/deepspeed/runtime/pipe/reconfiguration.py` to incorporate the reconfiguration granularity for the new GPU.
+- Open `deepspeed/runtime/constants.py`.
+- Append your new GPU architecture with the following parameters:
 
-   ```python
-   elif self.config["gpu"] == ENVPIPE_GPU_NEWARCH:
-       reconfigure_granularity = NEWARCH_RECONFIGURE_GRANULARITY
-   ```
+  - **`FILTER_MAX` and `FILTER_MIN`**: Define the range of SM frequencies for profiling. This restricts the profiling process to avoid testing unnecessary frequencies, reducing profiling time.
+  - **`GRANULARITY`**: Specifies the step size between consecutive SM frequencies for profiling.
+  - **`RECONFIGURE_GRANULARITY`**: Defines the minimum step size for frequency adjustment during runtime reconfiguration.
 
-4. **Verify Clock Frequencies:**
-   Use the provided script `benchmarks/examples/scripts/get_supported_clock_frequencies.py` to determine the supported clock frequencies for the new GPU architecture. This ensures compatibility with your hardware.
+Example:
 
-   ```bash
-   python get_supported_clock_frequencies.py
-   ```
+```python
+# Add your new GPU architecture name
+ENVPIPE_GPU_NEWARCH = 'newarch'
+
+# Define clock frequency parameters for the new GPU
+NEWARCH_SM_FREQ_FILTER_MAX = 1800  # Maximum profiled SM frequency (MHz)
+NEWARCH_SM_FREQ_FILTER_MIN = 900   # Minimum profiled SM frequency (MHz)
+NEWARCH_SM_FREQ_GRANULARITY = 90   # Step size for profiling SM frequency (MHz)
+NEWARCH_RECONFIGURE_GRANULARITY = 30  # Minimum step size for runtime reconfiguration (MHz)
+```
+
+---
+
+#### 3. **Update the Profiling Logic**
+Add the new GPU parameters to the profiling logic in `EnvPipe/DeepSpeed/deepspeed/profiling/energy_profiler/profiler.py`.
+
+This ensures that profiling respects the frequency constraints and granularity defined for the new GPU architecture:
+
+```python
+elif self.config["gpu"] == ENVPIPE_GPU_NEWARCH:
+    sm_freq_filter_max = NEWARCH_SM_FREQ_FILTER_MAX
+    sm_freq_filter_min = NEWARCH_SM_FREQ_FILTER_MIN
+    sm_freq_granularity = NEWARCH_SM_FREQ_GRANULARITY
+```
+
+---
+
+#### 4. **Update the Reconfiguration Logic**
+In `EnvPipe/DeepSpeed/deepspeed/runtime/pipe/reconfiguration.py`, incorporate the reconfiguration granularity for the new GPU to adjust SM frequencies dynamically during runtime:
+
+```python
+elif self.config["gpu"] == ENVPIPE_GPU_NEWARCH:
+    reconfigure_granularity = NEWARCH_RECONFIGURE_GRANULARITY
+```
+
+---
+
+### Explanation of Parameters
+
+| **Parameter**               | **Description**                                                                 |
+|------------------------------|---------------------------------------------------------------------------------|
+| **`*_SM_FREQ_FILTER_MAX`**   | Maximum SM frequency (in MHz) to consider during profiling.                     |
+| **`*_SM_FREQ_FILTER_MIN`**   | Minimum SM frequency (in MHz) to consider during profiling.                     |
+| **`*_SM_FREQ_GRANULARITY`**  | Step size for SM frequency adjustments during profiling.                        |
+| **`*_RECONFIGURE_GRANULARITY`** | Minimum step size for SM frequency reconfiguration during runtime adjustments. |
+
+---
+
+By following these steps, you can extend EnvPipe to support additional GPU architectures while maintaining efficient profiling and runtime reconfiguration.
 
 ## Additional Information
 
