@@ -70,6 +70,53 @@ Here’s an example of how to run the script:
 ./train_llama_deepspeed.sh --type envelope --scheduling ours --reconfig balanced --gpus 0,1,3
 ```
 
+### Add New GPU Architecture
+
+EnvPipe supports the following GPU architectures by default: **V100**, **RTX3090**, **A100**, and **A6000**. To add support for a new GPU architecture, you must configure the supported clock frequencies and granularity parameters in the code and update specific files.
+
+#### Steps to Add a New GPU Architecture
+
+1. **Define the GPU Architecture:**
+   Add the new GPU architecture name and its clock frequency parameters in the configuration section.
+
+  deepspeed/runtime/constants.py end of file. 
+
+   ```python
+   # Add your new GPU architecture name
+   ENVPIPE_GPU_NEWARCH = 'newarch'
+
+   # Define clock frequency parameters for the new GPU
+   NEWARCH_SM_FREQ_FILTER_MAX = 1800  # Maximum profiled SM frequency (MHz)
+   NEWARCH_SM_FREQ_FILTER_MIN = 900   # Minimum profiled SM frequency (MHz)
+   NEWARCH_SM_FREQ_GRANULARITY = 90   # Granularity of profiling SM frequency (MHz)
+   NEWARCH_RECONFIGURE_GRANULARITY = 30  # Minimum step size for reconfiguration (MHz)
+   ```
+
+2. **Update the Profiling Logic:**
+   Update `EnvPipe/DeepSpeed/deepspeed/profiling/energy_profiler/profiler.py` to include the new GPU architecture and its parameters.
+
+   ```python
+   elif self.config["gpu"] == ENVPIPE_GPU_NEWARCH:
+       sm_freq_filter_max = NEWARCH_SM_FREQ_FILTER_MAX
+       sm_freq_filter_min = NEWARCH_SM_FREQ_FILTER_MIN
+       sm_freq_granularity = NEWARCH_SM_FREQ_GRANULARITY
+   ```
+
+3. **Update the Reconfiguration Logic:**
+   Modify `EnvPipe/DeepSpeed/deepspeed/runtime/pipe/reconfiguration.py` to incorporate the reconfiguration granularity for the new GPU.
+
+   ```python
+   elif self.config["gpu"] == ENVPIPE_GPU_NEWARCH:
+       reconfigure_granularity = NEWARCH_RECONFIGURE_GRANULARITY
+   ```
+
+4. **Verify Clock Frequencies:**
+   Use the provided script `benchmarks/examples/scripts/get_supported_clock_frequencies.py` to determine the supported clock frequencies for the new GPU architecture. This ensures compatibility with your hardware.
+
+   ```bash
+   python get_supported_clock_frequencies.py
+   ```
+
 ## Additional Information
 
 For more details about DeepSpeed, refer to the [original DeepSpeed README](./README_deepspeed.md).

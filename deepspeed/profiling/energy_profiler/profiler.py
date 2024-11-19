@@ -4,6 +4,7 @@ import torch
 import torch.distributed as dist
 import numpy
 from deepspeed.runtime.constants import *
+import matplotlib.pyplot as plt
 
 
 class EnergyProfiler(object):
@@ -170,6 +171,8 @@ class EnergyProfiler(object):
 
                 self.memory_constraint_limit = max(int(torch.cuda.mem_get_info()[
                     0] / self.activation_size), 0)
+                
+                self.plot_energy_curve()
 
                 if self.grid.get_data_parallel_rank() == 0:
                     print("[ENVPIPE] Minimum sm freq for stage",
@@ -274,3 +277,20 @@ class EnergyProfiler(object):
         reschedule_cnt = min(total_micro_batch_limit, reschedule_cnt)
 
         return reschedule_cnt
+    
+    def plot_energy_curve(self):
+        """Plot the energy consumption vs SM frequency curve for this stage."""
+        if not hasattr(self, 'profile_energy') or not hasattr(self, 'gpu_clocks'):
+            raise ValueError("Energy profile or SM frequency data not available.")
+
+        if len(self.profile_energy) == 0 or len(self.gpu_clocks) == 0:
+            raise ValueError("No profiling data to plot.")
+
+        plt.figure(figsize=(8, 6))
+        plt.plot(self.gpu_clocks, self.profile_energy, marker='o', label=f"Stage {self.stage_id}")
+        plt.title(f"Energy Consumption vs SM Frequency for Stage {self.stage_id}")
+        plt.xlabel("SM Frequency (MHz)")
+        plt.ylabel("Energy Consumption (Joules)")
+        plt.grid(True)
+        plt.legend()
+        plt.savefig(f"stage_{self.stage_id}_energy_curve.png")
