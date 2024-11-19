@@ -8,6 +8,9 @@ This improved implementation of EnvPipe builds upon the [original EnvPipe reposi
 - **DeepSpeed Upgrade**: Updated for compatibility with the latest DeepSpeed library (v0.15.4).
 - **Huggingface Integration**: Refactored code to support Huggingface models seamlessly.
 - **Code Refactoring**: Improved code structure for better compatibility and maintainability.
+- **Improved P2P Communication**: Redesigned the activation and gradient transfer mechanism to ensure deadlock-free execution aligned with EnvPipe's scheduling method. This improvement resolves the reliance on increased `NCCL_BUFFSIZE` for non-blocking communication, which is not guaranteed as clarified [here](https://github.com/NVIDIA/nccl/issues/1252#issuecomment-2058458352).
+
+For non-blocking to be guaranteed, we'd need to provide something like a MPI_Bsend. 
 ## Getting Started
 
 ### Run the Docker Environment
