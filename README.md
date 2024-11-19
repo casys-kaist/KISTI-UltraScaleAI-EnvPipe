@@ -36,20 +36,19 @@ Navigate to the benchmarks directory and use the provided script to train a mode
 benchmarks/examples/train_llama_deepspeed.sh
 ```
 
-### Usage
+## Usage
+
+To run the EnvPipe training script, use the following options:
+
 ```bash
-# Display help message
-function show_help {
-    echo "Usage: $0 [options]"
-    echo ""
-    echo "Options:"
-    echo "  --type TYPE                Set ENVPIPE_TYPE (baseline, uniform, envelope). Required."
-    echo "  --scheduling SCHEDULING    Set ENVPIPE_SCHEDULING (1f1b, ours). Required."
-    echo "  --reconfig RECONFIGURE     Set ENVPIPE_RECONFIGURE (default, greedy, balanced). Required."
-    echo "  --gpus GPUS                Specify GPU numbers (comma-separated, e.g., 0,1,3). Required."
-    echo "  -h, --help                 Show this help message."
-    exit 0
-}
+Usage: ./train_llama_deepspeed.sh [options]
+
+Options:
+  --type TYPE                Set ENVPIPE_TYPE (baseline, uniform, envelope). Required.
+  --scheduling SCHEDULING    Set ENVPIPE_SCHEDULING (1f1b, ours). Required.
+  --reconfig RECONFIGURE     Set ENVPIPE_RECONFIGURE (default, greedy, balanced). Required.
+  --gpus GPUS                Specify GPU numbers (comma-separated, e.g., 0,1,3). Required.
+  -h, --help                 Show this help message.
 ```
 
 | **Parameter** | **Inputs** | **Explanation** |
@@ -63,6 +62,13 @@ function show_help {
 |  | greedy |  SM frequencies of pipeline units on the critical path are greedily reconfigured from the end of the critical path. |
 |  | balanced | SM frequencies of pipeline units on the critical path are balanced as much as possible. |
 
+## Example Command
+
+Here’s an example of how to run the script:
+
+```bash
+./train_llama_deepspeed.sh --type envelope --scheduling ours --reconfig balanced --gpus 0,1,3
+```
 
 ## Additional Information
 
