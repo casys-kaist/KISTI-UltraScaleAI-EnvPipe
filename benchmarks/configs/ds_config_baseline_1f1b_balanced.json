@@ -1,6 +1,6 @@
 {
-    "train_micro_batch_size_per_gpu": 2,
-    "train_batch_size": 32,
+    "train_micro_batch_size_per_gpu": 1,
+    "train_batch_size": 9,
     "steps_per_print": 100,
     "gradient_clipping": 1.0,
     "bf16": {
@@ -44,9 +44,9 @@
     },
     "wall_clock_breakdown": false,
     "envpipe": {
-        "type": "envelope",
-        "scheduling": "ours",
-        "reconfig": "default",
+        "type": "baseline",
+        "scheduling": "1f1b",
+        "reconfig": "balanced",
         "gpu": "a6000",
         "reconfigure_threshold_scale": "4"
     }

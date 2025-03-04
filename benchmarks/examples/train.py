@@ -45,7 +45,7 @@ class TrainerArguments:
     cache_dir: Optional[str] = field(default=None)
     output_dir: str = field(default="./output")
     max_seq_len: int = field(default=128)
-    train_steps: int = field(default=100)
+    train_steps: int = field(default=10)
     eval_steps: int = field(default=100)
     save_steps: int = field(default=100)
     log_steps: int = field(default=1)

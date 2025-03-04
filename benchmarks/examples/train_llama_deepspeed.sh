@@ -84,7 +84,7 @@ else
     mkdir -p "${OUTPUT}"
 fi
 
-# CHECKPOINT_PATH="meta-llama/Llama-3.2-1B"
+#CHECKPOINT_PATH="meta-llama/Llama-3.2-1B"
 CHECKPOINT_PATH="JackFram/llama-160m"
 DATA_PATH="../dataset/json/gsm8k.json"
 
